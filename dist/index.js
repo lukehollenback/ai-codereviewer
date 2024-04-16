@@ -178,15 +178,40 @@ function createComment(file, chunk, aiResponses) {
         };
     });
 }
-function createReviewComment(owner, repo, pull_number, comments) {
+function submitReviewCommentsToGitHub(owner, repo, pull_number, comments) {
     return __awaiter(this, void 0, void 0, function* () {
-        yield octokit.pulls.createReview({
-            owner,
-            repo,
-            pull_number,
-            comments,
-            event: "COMMENT",
-        });
+        //
+        // Group the comments by path, so that we can submit comments for each file individually. This
+        // gives us better ability to handle failures.
+        //
+        let groupedComments = comments.reduce((acc, comment) => {
+            if (!acc[comment.path]) {
+                acc[comment.path] = [];
+            }
+            acc[comment.path].push(comment);
+            return acc;
+        }, {});
+        //
+        // Submit comments for each file individually. Log, but do not completely fail, if submission of
+        // any file's comments fails.
+        //
+        for (const [path, comments] of Object.entries(groupedComments)) {
+            console.log(`Submitting the following comments for ${path}...`);
+            console.log(JSON.stringify(comments));
+            try {
+                yield octokit.pulls.createReview({
+                    owner,
+                    repo,
+                    pull_number,
+                    comments,
+                    event: "COMMENT"
+                });
+            }
+            catch (err) {
+                console.error(`Failed to create comments on ${path}.`);
+                console.error(err);
+            }
+        }
     });
 }
 function main() {
@@ -233,7 +258,7 @@ function main() {
             .join("\n");
         const comments = yield analyzeCode(filteredDiff, prDetails, customPrompts);
         if (comments.length > 0) {
-            yield createReviewComment(prDetails.owner, prDetails.repo, prDetails.pull_number, comments);
+            yield submitReviewCommentsToGitHub(prDetails.owner, prDetails.repo, prDetails.pull_number, comments);
         }
     });
 }
