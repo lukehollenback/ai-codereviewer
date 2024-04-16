@@ -1,4 +1,4 @@
-name: Code Review with OpenAI
+name: AI Code Reviewer
 on:
   pull_request:
     types:
@@ -7,15 +7,15 @@ on:
       - ready_for_review
 permissions: write-all
 jobs:
-  if: '! github.event.pull_request.draft'
-  code_review:
+  review:
     if: '! github.event.pull_request.draft'
     runs-on: ubuntu-latest
+    name: Review Code
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v3
-      - name: Code Review
-        uses: lukehollenback/ai-codereviewer@main-luke
+      - name: Review
+        uses: lukehollenback/ai-codereviewer@dev
         with:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
