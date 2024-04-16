@@ -24,6 +24,16 @@ interface PRDetails {
   description: string;
 }
 
+interface Comment {
+  body: string;
+  path: string;
+  line: number;
+}
+
+interface GroupedComments {
+  [path: string]: Comment[];
+}
+
 async function getPRDetails(): Promise<PRDetails> {
   const { repository, number } = JSON.parse(
     readFileSync(process.env.GITHUB_EVENT_PATH || "", "utf8")
@@ -172,19 +182,47 @@ function createComment(
   });
 }
 
-async function createReviewComment(
+async function submitReviewCommentsToGitHub(
   owner: string,
   repo: string,
   pull_number: number,
-  comments: Array<{ body: string; path: string; line: number }>
+  comments: Array<Comment>
 ): Promise<void> {
-  await octokit.pulls.createReview({
-    owner,
-    repo,
-    pull_number,
-    comments,
-    event: "COMMENT",
-  });
+  //
+  // Group the comments by path, so that we can submit comments for each file individually. This
+  // gives us better ability to handle failures.
+  //
+  let groupedComments = comments.reduce((acc: GroupedComments, comment) => {
+    if (!acc[comment.path]) {
+      acc[comment.path] = [];
+    }
+
+    acc[comment.path].push(comment);
+
+    return acc;
+  }, {});
+
+  //
+  // Submit comments for each file individually. Log, but do not completely fail, if submission of
+  // any file's comments fails.
+  //
+  for (const [path, comments] of Object.entries(groupedComments)) {
+    console.log(`Submitting the following comments for ${path}...`);
+    console.log(JSON.stringify(comments));
+
+    try {
+      await octokit.pulls.createReview({
+        owner,
+        repo,
+        pull_number,
+        comments,
+        event: "COMMENT"
+      });
+    } catch (err: any) {
+      console.error(`Failed to create comments on ${path}.`);
+      console.error(err);
+    }
+  }
 }
 
 async function main() {
@@ -244,7 +282,7 @@ async function main() {
 
   const comments = await analyzeCode(filteredDiff, prDetails, customPrompts);
   if (comments.length > 0) {
-    await createReviewComment(
+    await submitReviewCommentsToGitHub(
       prDetails.owner,
       prDetails.repo,
       prDetails.pull_number,
